@@ -1,0 +1,114 @@
+	;title "tsksee "+mde+" 文章成形中"
+	;onerror *twc
+	twbuf=""
+	notesel twbuf
+	noteload "learn/S_T.ini"
+	if notemax-1=0:rndd=0:else:rndd=rnd(notemax-1)
+	noteget twtext,rndd
+	split twtext,"\\",dst
+	flname+=stat-1
+	split twtext,"/",dst
+	flname+=stat-1
+	split twtext,":",dst
+	flname+=stat-1
+	split twtext,"?",dst
+	flname+=stat-1
+	split twtext,"\"\",dst
+	flname+=stat-1
+	split twtext,"<",dst
+	flname+=stat-1
+	split twtext,">",dst
+	flname+=stat-1
+	split twtext,"|",dst
+	flname+=stat-1
+;	if flname!0:md=1:;wait 1:goto*tw
+	if twtext=""&rep=0:;wait 1:goto*twc
+	tww=tww+twtext
+;
+	;title"tsksee "+mde+" 文章成形中["+twtext+"]"
+;
+;
+	repeat 150
+	exist "learn/"+twtext+".ini"
+	if strsize!-1{
+		notesel twbuf
+		noteload "learn/"+twtext+".ini"
+		split twbuf,"EOS",dst
+		if stat-1>=5:break
+		if notemax-1=0:rndd=0:else:rndd=rnd(notemax)
+		noteget twtext,rndd
+		;wait 1
+		if twtext="EOS" or twtext="":break
+		tww=tww+twtext
+	}else{
+		;wait 1
+		if rep=0:er=1:break
+	}
+	;wait 1
+	loop
+	;if er=1:er=0:goto*twc
+	flname=0
+	a=0
+;
+	if rep=1&tww=0:er=1
+	tww=str(tww)
+	split tww,"EOS",tww2,dst
+	split tww2,"。",tww23,dst
+	split tww23,"@",dst
+	if stat-1>=1&rep=1:tww23=replace(tww23, "@", "")
+	split tww23,"@tskseee",dst
+	if stat-1>=1:tww23=replace(tww23, "@tskseee", "")
+	split tww23,"@tsksee",dst
+	if stat-1>=1:tww23=replace(tww23, "@tsksee", "")
+	tww23=str(tww23)
+;
+	split tww23,"#",dst
+	if stat-1>=1:goto*twc
+;
+	split tww23,"@",dst
+	if stat-1>=1:goto*twc
+;
+	split tww23,"?",dst
+	if stat-1>=2:goto*twc
+;
+	plsms=""
+	repeat 100
+		if rep=1{
+			if er=1:break
+			if aaa=14 or aaa=15 or aaa=16{
+				Tweet "@"+screen_name+" "+tww23+"",id
+			}
+			if aaa=17 or aaa=18 or aaa=19{
+				Tweet "@"+screen_name+" "+tww23+" RT @"+screen_name+" : "+text+"",id
+			}
+		}else{
+			tweet ""+tww23+""+plsms+"",""
+		}
+		;title"tsksee "+mde+" ツイート中..."+stat+" ["+tww23+"]"
+		;if tm=90:goto*tw
+		mes stat
+		if stat=403&cnt>=10:er403++:randomize 30:goto*twc
+		if stat=401
+		if stat=200:er403=0:repk++:lastscreen_name=screen_name:repl=0:opop=1{
+			if rep=1{
+				notesel idlist
+				idlist+=""+id+"\n"
+				notesave"idlist.ini"
+			}
+			break
+		}
+		plsms+="　"
+		;wait 1
+	loop
+	;title"tsksee "+mde+" 処理6"
+	if er403>=10:kisezikoku=d3timer():kise=1{
+		if rep=1{
+			er=1
+		}else{
+			goto*main
+		}
+	}
+	;if opop=0:goto*tw
+	opop=0
+	kkk=0
+	par=0

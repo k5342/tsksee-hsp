@@ -1,0 +1,262 @@
+#include "TsubuyakiSoup.as"
+#module UserStream
+
+#define INTERNET_FLAG_IGNORE_CERT_DATE_INVALID 0x2000
+#define INTERNET_FLAG_SECURE 0x00800000 
+
+//---------------
+//  wininet.dll
+//---------------
+#uselib "wininet.dll"
+#cfunc _InternetOpen "InternetOpenA" sptr, int, sptr, sptr, int
+#cfunc _InternetOpenUrl "InternetOpenUrlA" int, str, sptr, int, int, int
+#func _InternetReadFile "InternetReadFile" int, var, int, var
+#func _InternetCloseHandle "InternetCloseHandle" int
+#cfunc _InternetConnect "InternetConnectA" int, str, int, sptr, sptr, int, int, int
+#cfunc _HttpOpenRequest "HttpOpenRequestA" int, sptr, str, sptr, sptr, sptr, int, int
+#cfunc _HttpSendRequest "HttpSendRequestA" int, sptr, int, sptr, int
+#cfunc _HttpQueryInfo "HttpQueryInfoA" int, int, var, var, int
+#func _InternetQueryDataAvailable "InternetQueryDataAvailable" int, var, int, int
+#func _InternetSetOption "InternetSetOptionA" int, int, int, int
+//---------------
+//  crtdll.dll
+//---------------
+#uselib "crtdll.dll"
+#func _time "time" var
+//============================================================
+/*  [HDL symbol infomation]
+
+%index
+RESTAPI
+TwitterAPIを実行
+
+%prm
+p1, p2, p3, p4, p5
+p1 = 変数      : 応答結果を代入する変数
+p2 = 変数      : レスポンスヘッダを代入する変数
+p3 = 0～1(0)   : メソッド GET(0) POST(1)
+p4 = 文字列    : API
+p5 = 配列      : APIに添加する引数を代入した文字列配列
+
+%inst
+TwitterAPIを実行し、Twitterから返ってきたステータスコードを戻り値としてstatに返します。
+
+p1,p2にはそれぞれ応答結果とヘッダを代入する文字列型変数を指定します。
+
+p3でメソッドを指定することができます。"GET"で送信する場合は 0 を、"POST"で送信する場合は 1 を指定してください。その他の値を指定した場合は、自動的に"GET"メソッドを使用します。
+TwitterAPIで指定されているメソッドを選択してください。
+
+p4で実行するTwitterAPIを取得したいフォーマットとともに指定します。
+    例 : "statuses/mentions.xml"      自分への言及をXML形式で取得
+         "statuses/update.json"       Twitterへ投稿し、結果をJSON形式で取得
+なお、TwitterAPIごとに指定できるフォーマットが決まっているので気をつけてください。
+
+
+TwitterAPIに渡す引数を文字列型の配列にしてp5に指定します。
+例えば、API"home_timeline"に引数"trim_user=true"と"count=50"を指定して、ホームタイムラインをユーザ情報をユーザIDだけにして50件取得するとします。
+    Argument(0) = "trim_user=true"
+    Argument(1) = "count=50"
+    RESTAPI ResponseBody, ResponseHeader, 0, "statuses/home_timeline.xml", Argument
+
+
+シグネチャの付加などは命令側でしていますので、TwitterAPIのリファレンスに記載されている引数以外は指定する必要はありません。
+また、"oauth/request_token"と"oauth/access_token"を呼び出す際、引数の
+"oauth_consumer_key","oauth_nonce","oauth_signature_method","oauth_timestamp","oauth_token","oauth_version","oauth_signature"については命令側で処理・付加していますので、指定しないでください。
+例として、認証方式にxAuthを使い"oauth/access_token"でアクセストークンを取得する処理
+    Argument(0) = "x_auth_mode=client_auth"
+    Argument(1) = "x_auth_password=xxxxxx"
+    Argument(2) = "x_auth_username=xxxxxxxx"
+    RESTAPI ResponseBody, ResponseHeader, 1, "oauth/access_token", Argument
+^
+
+%group
+TwitterAPI操作命令
+
+%url
+http://watcher.moe-nifty.com/memo/docs/twitterAPI.txt
+
+%*/
+//------------------------------------------------------------
+
+#deffunc connectUserStream var p1, var p2, int p3, str p4, array p5
+	termUserStream
+//  引数チェック＆初期化
+	//sdim p1
+	sdim p2
+	API = "user.json"//API = p4
+	if vartype(p5) != 2 : return 0
+	hConnect = 0		//InternetConnectのハンドル
+	hRequest = 0		//HttpOpenRequestのハンドル
+	API_statcode = 0	//リクエストの結果コード
+	API_p1Length = 0	//データ長
+	API_rsize = 1024	//バッファ初期値
+	API_hsize = 0		//取得したバイト数が代入される変数
+	dup TS_AccessToken,TS_AccessToken@TsubuyakiSoup
+    dup TS_Consumer_Key, TS_Consumer_Key@TsubuyakiSoup
+    dup TS_Consumer_Secret,TS_Consumer_Secret@TsubuyakiSoup
+    dup TS_AccessTokenSecret, TS_AccessTokenSecret@TsubuyakiSoup
+    dup TS_RequestToken, TS_RequestToken@TsubuyakiSoup
+    dup TS_RequestTokenSecret, TS_RequestTokenSecret@TsubuyakiSoup
+    
+//  メソッドの設定
+	if (p3 = 1) {
+		Method = "POST"
+	} else {
+		Method = "GET"
+	}
+//  ポート＆フラグの設定
+	UsePort = 443 : RequestFlag = -2139082752 | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID | INTERNET_FLAG_SECURE
+	VersionStr = "2/"
+	TokenStr = TS_AccessToken
+	SigKey = TS_Consumer_Secret+" "+TS_AccessTokenSecret
+	if (strmid(API,0,5) = "oauth") {
+		VersionStr = ""
+		if (API = "oauth/access_token") {
+			//OAuth認証だったら、
+			repeat length(p5)
+				if (p5(cnt) = "x_auth_mode=client_auth") : break
+				if cnt = length(p5)-1 : TokenStr = TS_RequestToken : SigKey = TS_Consumer_Secret+" "+TS_RequestTokenSecret
+			loop
+		}
+	}
+//  シグネチャ生成
+	SigArrayMax = 6 + length(p5)
+	sdim SigArray, 500, SigArrayMax
+	SigNonce = RandomString(8,32)
+	_time SigTime
+	SigArray(0) = "oauth_consumer_key=" + TS_Consumer_Key
+	SigArray(1) = "oauth_nonce=" + SigNonce
+	SigArray(2) = "oauth_signature_method=HMAC-SHA1"
+	SigArray(3) = "oauth_timestamp=" + SigTime
+	SigArray(4) = "oauth_token="+ TokenStr
+	SigArray(5) = "oauth_version=1.0"
+	repeat SigArrayMax - 6
+		SigArray(6+cnt) = p5(cnt)
+	loop
+	//ソート
+	SortString SigArray
+	//"&"で連結
+	TransStr = ""+ Method +" https://userstream.twitter.com/"+ VersionStr + API +" "
+	repeat SigArrayMax
+		if SigArray(cnt) = "" : continue
+		TransStr += SigArray(cnt) +"&"
+	loop
+	TransStr = strmid(TransStr, 0, strlen(TransStr)-1)
+	Signature = SignatureEncode(TransStr, SigKey)
+//  データ整形
+	if (p3 = 1) {
+		//POST
+		PostStr = ""
+		repeat SigArrayMax
+			PostStr += SigArray(cnt) +"&"
+		loop
+		PostStr += "oauth_signature="+ Signature
+		PostStrLen = strlen(PostStr)
+		AddUrl = ""
+	} else {
+		//GET
+		PostStr = 0
+		PostStrLen = 0
+		AddUrl = "?"
+		repeat SigArrayMax
+			AddUrl += SigArray(cnt) +"&"
+		loop
+		AddUrl += "oauth_signature="+ Signature
+	}
+	//サーバへ接続
+	hConnect = _InternetConnect(TS_hInet@TsubuyakiSoup, "userstream.twitter.com", UsePort, 0, 0, 3, 0, 0)
+	logmes VersionStr+API+AddUrl
+	if (hConnect) {
+		//リクエストの初期化
+		hRequest = _HttpOpenRequest(hConnect, Method, VersionStr+API+AddUrl, "HTTP/1.1", 0, 0, RequestFlag, 0)
+		if (hRequest) {
+			//サーバへリクエスト送信
+			if ( _HttpSendRequest(hRequest, "Accept-Encoding: gzip, deflate", -1, PostStr, PostStrLen)) {
+				//ヘッダを取得する変数の初期化
+				p2Size = 3000
+				sdim p2, p2Size
+				//ヘッダの取得
+				if ( _HttpQueryInfo(hRequest, 22, p2, p2Size, 0) ) {
+					//ヘッダの解析
+					notesel p2
+					repeat notemax
+						noteget API_BufStr, cnt
+						API_buf = instr(API_BufStr, 0, "Status: ")				//ステータスコード
+						if (API_Buf != -1) : API_statcode = int(strmid(API_BufStr, API_buf+8, 3))
+						API_buf = instr(API_BufStr, 0, "Content-Length: ")		//長さ
+						if (API_Buf != -1) : API_p1Length = int(strmid(API_BufStr, -1, strlen(API_BufStr)-API_buf+16))
+						API_buf = instr(API_BufStr, 0, "X-RateLimit-Limit: ")		//60分間にAPIを実行できる回数
+						if (API_Buf != -1) : TS_RateLimit(0) = int(strmid(API_BufStr, -1, strlen(API_BufStr)-(API_buf+19)))
+						API_buf = instr(API_BufStr, 0, "X-RateLimit-Remaining: ")	//APIを実行できる残り回数
+						if (API_Buf != -1) : TS_RateLimit(1) = int(strmid(API_BufStr, -1, strlen(API_BufStr)-(API_buf+23)))
+						API_buf = instr(API_BufStr, 0, "X-RateLimit-Reset: ")		//リセットする時間
+						if (API_Buf != -1) : TS_RateLimit(2) = int(strmid(API_BufStr, -1, strlen(API_BufStr)-(API_buf+19)))
+					loop
+					noteunsel
+					UserStreamConnected = 1
+				} else {
+					//ヘッダの取得ができなかった場合
+					API_statcode = -1
+				}
+			} else {
+				//サーバへリクエスト送信できなかった場合
+				API_statcode = -2
+			}
+			////deleted
+		} else {
+			//Requestハンドルを取得できなかった場合
+			API_statcode = -3
+		}
+
+	} else {
+		//Connectハンドルを取得できなかった場合
+		API_statcode = -4
+	}
+return API_statcode
+//============================================================
+
+#deffunc getUserStream var p1
+	wait 1
+	if(hRequest == 0){
+		return -1
+	}
+	//入手可能なデータ量を取得
+	_InternetQueryDataAvailable hRequest, API_rsize, 0, 0
+	//バッファの初期化
+	sdim API_bufStr, API_rsize+1
+	sdim p1, API_p1Length+1
+	size = 0
+	repeat
+		wait 1
+		_InternetReadFile hRequest, API_bufStr, API_rsize, API_hsize
+		wait 1
+		p1 += strmid(API_bufStr, 0, API_hsize)
+		wait 1
+		size += API_hsize
+		if (size >= API_rsize)||(API_hsize == 0) : break
+	
+	;	指定時刻でループ解除
+		
+		sec=gettime(6)
+		if sec=0{
+			twmin=min
+			mddd=1
+			nokou=1
+			break
+			}
+	loop
+	
+return
+
+#deffunc termUserStream onexit 
+	if(hConnect != 0){
+		_InternetCloseHandle hConnect
+	}
+	if(hRequest != 0){
+		//Requestハンドルの破棄
+		_InternetCloseHandle hRequest
+	}
+	hRequest = 0
+return
+
+#global

@@ -1,0 +1,788 @@
+	#include "hspmath.as"
+	#runtime"hsp3cl"
+	#uselib "libmecab.dll"
+	#cfunc  mecab_new				"mecab_new"					int,str
+	#cfunc  mecab_new2				"mecab_new2"				str
+	#cfunc  mecab_sparse_tostr		"mecab_sparse_tostr"		int,sptr
+	#include"d3m.hsp"
+	#include "mod_regexp.as"
+	#include"kernel32.as"
+	#define CONSUMER_KEYm 	"d0YD0wkYsyr8MOhxp6tMsA"
+	#define CONSUMER_SECRETm	"w1hb9g8RBb7efu9zZUa6OcgbUGp8NamjcaAfPFFFFA"
+;
+	onerror *mainn
+;
+	;kise=1
+	// モジュールをインクルード
+	#module
+	#defcfunc replace2 str p1, str target, str after
+	dim	len, 2
+	len = strlen(p1), strlen(target)
+	
+	sdim string, len + 1		// 置換前文字列を格納する変数を用意
+	string = p1			// instr するので、いったん変数に移す
+	
+	i = 0	// リセット
+	repeat
+		n = instr(string, i, target)
+		if ( n < 0 ) { break }
+		i += n
+		string = strmid(string, 0, i) + after + strmid(string, i + len(1), len(0) - i)
+		i += len(1)
+		await 1		// とりあえずフリーズしません
+	loop
+	return string
+		
+	#global
+	edobj_id=stat
+	mecab_opt=""
+	p_mecab_t=mecab_new2(mecab_opt)
+	if p_mecab_t = 0 {dialog "mecabの起動に失敗" :stop}
+	sdim st_input, 260
+	sdim st_result, 32000
+
+	#include "UserStream-Module.hsp"
+	;サンプル用設定ファイル
+	onexit *exit
+	#include "SampleSetting.hsp"
+	if kise=1&d3tim=0:kisezikoku=d3timer():d3tim=1:er403=0:mes"規制"
+	jikoshoukai=""
+	jikoshoukai="@k5342 氏が開発した全自動botですよ～","HSPという言語で作成された全自動botですよ～","勝手に学習してつぶやくいい子ちゃんですよ～","え、そんなに知りたい？ｗｗｗｗｗ","逆にどう思う？"
+*kd
+	;kise=1
+	mes "kd"
+	// 初期化
+	TS_Init "tskseee", CONSUMER_KEY, CONSUMER_SECRET, 20
+
+	//設定ファイルの有無確認
+	xToken = ""
+	xSecret = ""
+	exist "Setting.txt"
+	if strsize != -1 {
+		notesel SFA
+		noteload "Setting.txt"
+		;if (Decryption(SFA, "SampleKey")=0) : dialog "ファイルの復号に失敗したため、読み込むことができませんでした。終了します。" : end
+		noteget xToken,0
+		noteget xSecret,1
+		noteunsel
+		SetAccessToken xToken, xSecret
+	}
+	if ( (xToken ="") or (xSecret = "") ) : dialog "「Sample01_OAuth.hsp」か「Sample02_xAuth.hsp」を実行して「Setting.txt」を作成してください。" : end
+	nul = ""
+	header = ""
+	st_input=""
+	sdim param, 1
+	param(0) = "a=b"
+	connectUserStream nul, header, METHOD_GET, nul, param
+	notesel header
+	noteget hed
+	split hed," ",dst,hcode,dst
+	if hcode!"200":mes hcode:wait 30000:goto*kd
+
+;	mesbox nul, ginfo_winx, ginfo_winy, 4
+
+	buf = "" : us = ""
+	
+	sdim p1, 4096
+	sdim p12, 4096
+	;pos 0,0:button"Tweet",*twt
+*mainn
+	repl=0
+	mes"mainn"
+	sdim buf
+	buf=""
+	screen_name=""
+	id=""
+	kousin=0
+	retweeted=0
+	;title"tsksee "+i+""
+	mes "[kise="+kise+"/er403="+er403+"]"
+	dim SYSTEM_POWER_STATUS, 3
+	
+	GetSystemPowerStatus varptr (SYSTEM_POWER_STATUS)
+	mes"バッテリー情報確認"
+	
+	if peek(SYSTEM_POWER_STATUS.0, 0)=0&btr=0{
+		mes"バッテリー駆動制御"
+		plsms=""
+		repeat 5
+			kudou=1.0*peek(SYSTEM_POWER_STATUS.0,2)/100*120-10
+			Tweet "つくしーが起動しているコンピュータがバッテリー駆動に切り替えられたことを検出しました。\nつくしーの推定駆動可能時間は"+int(kudou)+"分です。"+plsms+"",""
+			mes stat
+			if stat=200:er403=0:break
+			if stat=403:er403++
+			plsms="　"
+		loop
+		btr=1
+	}
+	
+	if 1.0*peek(SYSTEM_POWER_STATUS.0,2)<=15&btr=1&btryabai=0{
+		plsms=""
+		repeat 5
+			kudou=1.0*peek(SYSTEM_POWER_STATUS.0,2)/100*120-10
+			Tweet "つくしーが起動しているコンピュータがそろそろバッテリー切れになることを検出しました。\nつくしーの推定駆動可能時間は"+int(kudou)+"分ですがまもなくつぶやきが停止します。"+plsms+"",""
+			mes stat
+			if stat=200:er403=0:break
+			if stat=403:er403++
+			plsms="　"
+		loop
+		btryabai=1
+	}
+	if peek(SYSTEM_POWER_STATUS.0, 0)=1&btr=1{
+		mes"AC接続認識"
+		plsms=""
+		repeat 5
+			Tweet"充電に切り替えられました。ご安心下さいまし。"+plsms+"",""
+			plsms=plsms+"　"
+			mes stat
+			if stat=200:er403=0:break
+			if stat=403:er403++
+		loop
+		plsms=""
+		btr=0
+		btryabai=0
+	}
+	;tweet_booted=1
+	if tweet_booted=1{
+		plsms=""
+		repeat 5
+			Tweet"tskseeは再起動されてアップデートされましたのっ♪ \nバージョン：0.45b (07/16 "+gettime(4)+":"+gettime(5)+":"+gettime(6)+")\n\n以下の更新がおこなわれました♪\n・フォローに関するバグの修正\n・リプライに関するバグの修正"+plsms+"",""
+			plsms=plsms+"　"
+			mes stat
+			if stat=200:er403=0:end
+			if stat=403:er403++
+		loop
+	}
+	mes"INFO="+peek(SYSTEM_POWER_STATUS.0, 0)
+	mes"BTR="+btr
+	mes"BTRYABAI="+btryabai
+	
+	mes "repk="+repk
+	mes"=================================================-"
+	mes "リプライ回数"+repk
+	getUserStream buf
+	if mddd=1:mddd=0:goto*tiki
+	;mes buf
+	// ポイント：この括弧[]を付けないと正しく認識しない！
+	buf = "["+buf+"]"
+	
+	// Sample10_JsonParse.hsp とほぼ一緒の内容
+	json_sel buf
+	
+	if instr(buf, 0, "friends\"") != -1{
+			friend_list=""+buf
+	}
+	// 念のため、retweeted_statusが含まれているかどうかチェックする
+	if instr(buf, 0, "retweeted_status") != -1{
+			retweeted=1
+	}
+	// 念のため、screen_nameが含まれているかどうかチェックする
+	if instr(buf, 0, "screen_name") != -1{
+	
+/*
+		// 実験のためにダンプ
+		notesel buf2
+		noteadd buf
+		noteadd "--------------------------------"
+		notesave "dump.txt"
+*/
+		
+		repeat json_length("")
+			screen_name=json_val("["+ cnt +"].user.screen_name")
+			text=json_val("["+ cnt +"].text")
+			created_at=json_val("["+ cnt +"].created_at")
+			source=json_val("["+ cnt +"].source")
+			uid=json_val("["+ cnt +"].user.id")
+			if retweeted{
+				split text,": ",dst,text
+			}
+			id=json_val("["+ cnt +"].id_str")
+		loop
+		
+		source=str(source)
+		split source,">",dst,source
+		split source,"<",source,dst
+	
+		if instr (source,0,"twittbot.net")!=-1 or instr(source,0,"BOT")!=-1 or instr(source,0,"rakubo")!=-1 or instr(screen_name,0,"_bot")!=-1{
+			mes"-----------------------------------"
+			mes"　　　※※　　botです　　※※　　　"
+			mes"-----------------------------------"
+			kousin=0:goto*mainn
+		}
+		
+		mes"-----------------------------------"
+		mes created_at
+		mes "@"+screen_name+" ("+uid+")"
+		mes text
+		mes "	"+id
+		mes "	"+mae_id
+		mes "via "+source
+		mes"-----------------------------------"
+		mes"screen_name="+screen_name
+		mes"lastscreen_name="+lastscreen_name
+		if mae_id!=id:kousin=1:mae_id=""+id:else:kousin=0
+		time=""
+;		split created_at," ",dst,dst,dst,time,dst,dst
+;		split time,":",houu,minu,secu
+;		gettime()
+	}else{
+		if retweeted!1:ser++
+		if ser>=10&nokou=0:ser=0:wait 6000:goto*kd
+	}
+	if screen_name!"tsksee"&screen_name!"tskseee"{
+		st_input=text
+		if kousin=1{
+			#include"learn.hsp"
+		}
+	}
+	nokou=0
+	
+	i++
+	if sb=1:return
+	
+	if kousin=1:mes"GOTO:MAIN(KOUSIN)":goto*main
+	
+	goto*tiki
+	wait 1
+	mes"LOOP"
+	goto*mainn
+*main
+	split text,"@tsksee",dst
+	if strmid(text,0,7)="@tsksee"{
+		if stat-1>=1&screen_name!"tsksee"&screen_name!"tskseee"&screen_name!"totori_no_hito"&mid!id{
+			mid=id
+			mes "認識"
+			repl=1
+			if retweeted=0:mes"GOTO:MAIN"
+		}
+	}
+	mes"main [repl="+repl+" rt="+retweeted+"]"
+	// 初期化
+	TS_Init "tskseee", CONSUMER_KEY, CONSUMER_SECRET, 20
+
+	//設定ファイルの有無確認
+	xToken = ""
+	xSecret = ""
+	notesel SFA
+	noteload "Setting.txt"
+	;if kise=0:if (Decryption(SFA, "SampleKey")=0)
+	noteget xToken,0
+	noteget xSecret,1
+	noteunsel
+	SetAccessToken xToken, xSecret
+	
+	teiki="姉妹botの @tskseee もよろしくね","フォローされると絡んでくれるよ","絡みがうざかったら僕に解除ってリプライ送ってくれると絡まなくなるよ"
+	
+	teiki_rnd=rnd(2)
+	
+	if s30=0&min>=30&min<35{
+		repeat 15
+		tweet ""+teiki(teiki_rnd+1)+"",id
+		title"ツイート中...  Status:"+stat+"":if tm=90:break
+		if stat=403&cnt>=4:er403++:break
+		if stat=401
+		if stat=200:break
+		loop
+		s30=1
+	}else{
+		if min>=30:s30=0
+	}
+
+	er=0
+;
+	i=0
+	
+	wait 1
+
+;	kise=2
+
+*main2
+	mes "main2"
+	if suspend=1&suspended+1=gettime(4){
+		suspend=0
+		repk=0
+		plsms=""
+		repeat 5
+		tweet"すばらしい @"+lastscreen_name+" さんによって制限に達してたみたいだけど1時間制限を解除したよっ♪\nこれからもよろしくー！"+plsms+""
+		plsms+="　"
+		if stat=200:break
+		loop
+		plsms=""
+	}
+	if suspend=1:mes"リプライ規制中":goto*tiki
+	twttt=0
+	if retweeted=1:goto*mainn
+	retweeted=0
+	mes "repl1="+repl
+	;if kousin=0:wait 1:goto*mainn
+	mes "kousin="+kousin+" retweeted="+retweeted+""
+	if instr(screen_name, 0, "tsksee")!=-1{twttt=0:goto*mainn}else{
+		if instr(text, 0, "おやすみ")!=-1:twttt=1:twtxt="@"+screen_name+" おやすみー"
+		if instr(text, 0, "おはよ")!=-1:twttt=1:twtxt="@"+screen_name+" おはよー"
+		if instr(text, 0, "離脱")!=-1:twttt=1:twtxt="@"+screen_name+" りだてらー"
+		if instr(text, 0, "ほかる")!=-1:twttt=1:twtxt="@"+screen_name+" ほかてらー"
+		if instr(text, 0, "風呂る")!=-1:twttt=1:twtxt="@"+screen_name+" 風呂てらー"
+		if instr(text, 0, "ふろる")!=-1:twttt=1:twtxt="@"+screen_name+" 風呂てらー"
+		if instr(text, 0, "めしる")!=-1:twttt=1:twtxt="@"+screen_name+" めしてらー"
+		if instr(text, 0, "飯る")!=-1:twttt=1:twtxt="@"+screen_name+" めしてらー"
+		if instr(text, 0, "ってくる")!=-1:twttt=1:twtxt="@"+screen_name+" てらー"
+		if instr(text, 0, "ってきた")!=-1:twttt=1:twtxt="@"+screen_name+" えりー"
+		if instr(text, 0, "ほかった")!=-1:twttt=1:twtxt="@"+screen_name+" ほかえりー"
+		if instr(text, 0, "ただいま")!=-1:twttt=1:twtxt="@"+screen_name+" おかえりー"
+		
+		if instr(text, 0, "つくし")!=-1:repl=1:fav=1
+		if instr(text, 0, "つくしー")!=-1:repl=1:fav=1
+		if instr(text, 0, "tukusi")!=-1:repl=1:fav=1
+		if instr(text, 0, "tsukusi")!=-1:repl=1:fav=1
+		if instr(text, 0, "tsukushi")!=-1:repl=1:fav=1
+		if instr(text, 0, "tukushi")!=-1:repl=1:fav=1
+		if instr(text, 0, "tsksee")!=-1&instr(text, 0, "@")=-1:repl=1:fav=1
+		if instr(text, 0, "おみくじ")!=-1:twttt=2:repl=1
+	
+		mes "Fav??? [fav="+fav+"]"
+		
+		if fav=1{
+			repeat 10
+				;mes"Fav-ing..."
+				;AddFavorite id
+				;if stat=200:mes "favorited":break
+				;mes ""+stat+""
+				wait 1
+			loop
+		}
+		fav=0
+		randomize
+		
+		kusa_kaz=rnd(100)
+		kusa=""
+		repeat kusa_kaz
+			kusa+="ｗ"
+		loop
+	
+		ott=""
+		repeat kusa_kaz
+			ott+="おっ"
+		loop
+	
+		majikichi2=0
+		majikichi=rnd(7)
+		majikichi2=rnd(600)
+		mes ""+"majikichi="+majikichi
+		
+		do_retweet=0
+		if majikichi=3{
+			if instr(text, 0, "ｺﾎﾟｫｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗ")!=-1:twttt=1:twtxt="ｺﾎﾟｫｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗｗ":do_retweet=1
+			if instr(text, 0, "　━┓　 ＿＿＿\n　┏┛ ／ ―　 ＼\n　・ ／　(●)　＼ヽ\n　　/　(⌒　 (●)/\n　 /　　￣ヽ_) ／\n`／　　　　＿／\n｜　　　　 ＼\n｜　　　　　｜")!=-1:twttt=1:twtxt="　━┓　 ＿＿＿\n　┏┛ ／ ―　 ＼\n　・ ／　(●)　＼ヽ\n　　/　(⌒　 (●)/\n　 /　　￣ヽ_) ／\n`／　　　　＿／\n｜　　　　 ＼\n｜　　　　　｜":do_retweet=1
+			if instr(text, 0, "＼( 'ω')／ウオオオオオアアアアアアアアアアアアアアアアアアアアア")!=-1:twttt=1:twtxt="＼( 'ω')／ウオオオオオアアアアアアアアアアアアアアアアアアアアア":do_retweet=1
+			if instr(text, 0, "　　／|　　　／|\n　 /　`ー―-/　|\n`／￣＼z ／￣＼z＼ \n｜ ● ｜｜ ● ｜) ヽ\n|＼＿／” ＼＿／”　 |\n|/　＿＿＿＿　＼ ＃|\n| Ｖ亠亠亠亠＼　ヽ |\n| ｜ ／⌒／⌒｜　　|\nヽ｜/　 /　 /｜ / ノ\n／∧ェェェェ／／　＼\n　＼二二二二／")!=-1:twttt=1:twtxt="　　／|　　　／|\n　 /　`ー―-/　|\n`／￣＼z ／￣＼z＼ \n｜ ● ｜｜ ● ｜) ヽ\n|＼＿／” ＼＿／”　 |\n|/　＿＿＿＿　＼ ＃|\n| Ｖ亠亠亠亠＼　ヽ |\n| ｜ ／⌒／⌒｜　　|\nヽ｜/　 /　 /｜ / ノ\n／∧ェェェェ／／　＼\n　＼二二二二／":do_retweet=1
+			if instr(text, 0, "そろそろTwitter閉じろ\n ￣￣￣￣∨￣￣￣￣￣\n 　☆　　 ∧＿∧\n　　　 (*´へωへ`）☆\n 　　　 /つ¶つ¶ (( ((\n　　　／￣￣￣＼\n　 　　|) ○ ○ ○ (|\n 　　／″ 　　ν.　　＼ \n　／＿＿＿＿＿＿＿＿＼\n ￣ ＼＿＼＿_／＿／￣")!=-1:twttt=1:twtxt="そろそろTwitter閉じろ\n ￣￣￣￣∨￣￣￣￣￣\n 　☆　　 ∧＿∧\n　　　 (*´へωへ`）☆\n 　　　 /つ¶つ¶ (( ((\n　　　／￣￣￣＼\n　 　　|) ○ ○ ○ (|\n 　　／″ 　　ν.　　＼ \n　／＿＿＿＿＿＿＿＿＼\n ￣ ＼＿＼＿_／＿／￣":do_retweet=1
+			if instr(text, 0, "三└(┐卍^o^)卍ﾄﾞｩﾙﾙﾙﾙ")!=-1:twttt=1:twtxt="三└(┐卍^o^)卍ﾄﾞｩﾙﾙﾙﾙ":do_retweet=1
+			
+			if instr(text, 0, "（ ＾ω＾）おっ")!=-1:twttt=1:twtxt="（ ＾ω＾）おっ"+ott+"":do_retweet=1
+			if instr(text, 0, "三(^o^)ノ")!=-1:twttt=1:twtxt="三(^o^)ノ RT @"+screen_name+" : "+text+"":do_retweet=1
+			;if instr(text, 0, "")!=-1:twttt=1:twtxt=""
+			;if instr(text, 0, "")!=-1:twttt=1:twtxt=""
+			
+			if text="(´へωへ`*)":twttt=1:twtxt="(´へωへ`*)":do_retweet=1
+			if text="(´へεへ`*)":twttt=1:twtxt="(´へεへ`*)":do_retweet=1
+			if text="(´へ皿へ`*)":twttt=1:twtxt="(´へ皿へ`*)":do_retweet=1
+			if text="(´ぺεぺ`*)":twttt=1:twtxt="(´ぺεぺ`*)":do_retweet=1
+			repl=0
+			
+		}
+		
+		
+		
+		if majikichi2=6{
+			twttt=1
+			twtxt=""+"ワロタｗｗ"+kusa+" RT @"+screen_name+" : "+text+""
+		}
+	}
+	if twttt!0:repl=0
+	if repl=1:repll=1
+	kousin=0
+	if instr(screen_name, 0, "tsksee")!=-1:twttt=0:repl=0
+	mes "[twittt="+twttt+" /repl="+repl+"]"
+	
+	if repk=24{
+		plsms=""
+		repeat 5
+		Tweet "1時間の許容範囲を超えたよっ♪\nまたよろしくね＞＜ #ばーか\n許容範囲を超えさせてしまったすばらしい方→ @"+lastscreen_name+""+plsms+"",id
+		mes stat
+		if stat=200:mes"許容範囲外":break
+		plsms+="　"
+		loop
+		plsms=""
+		repl=0
+		twttt=0
+		suspend=1
+		suspended=gettime(4)
+	}else{
+		mes"許容範囲 現在"+repk+"貝"
+	}
+	if twttt=1{
+		if instr(text, 0, "@")!=-1{}else{
+			if majikichi=3&do_retweet=1{
+				repeat 10
+					retweet id
+					if stat=200:break
+				loop
+			}
+			mes "[送信中]"
+			plsms=""
+			repeat 5
+			tweet""+twtxt+""+plsms+"",id
+			mes stat
+			if stat=200:lastscreen_name=screen_name:er203=0:mes"[完了]":break
+			if stat=403:plsms="　　"
+			if stat=403&cnt=4:er403++:mes "[送信エラー]":break
+			loop
+			twtxt=""
+		}
+		plsms=""
+		twttt=0
+	}
+	mes"おみくじ？ "+twttt+" repl="+repl+""
+	if twttt=2{
+		randomize
+			if instr(text, 0, "@tsksee")!=-1{
+				mes "[送信中]"
+				plsms=""
+				sdim kekka,,10
+				sdim kekka2,,10
+				kekka="大大吉","大吉","中吉","小吉","吉","凶","大凶","大大凶"
+				kekka2="あなたの運勢は・・・","君の運勢は・・・","貴様の運勢は・・・","てめーの運勢は・・・","えーっとね、運勢は・・・","気まぐれだけどね、たぶん・・・","気分だけどね、君は・・・","ん？あー・・・"
+				repeat 5
+					kekkaa=rnd(8)
+					randomize kekkaa
+					kekkab=rnd(8)
+					tweet"@"+screen_name+" "+kekka2(kekkab)+""+kekka(kekkaa)+""+plsms+"",id
+					mes stat
+					if stat=200:er203=0:mes"[完了]":break
+					if stat=403:plsms="　　"
+					if stat=403&cnt=4:er403++:mes "[送信エラー]":break
+				loop
+				twtxt=""
+			}
+		plsms=""
+		repl=0
+	}
+
+	if kise!1{
+		if repl=1{
+			if instr(text, 0, "解除")!=-1{
+				repeat 5
+				remove screen_name
+				if stat=200{
+					repeat 5
+						tweet "@"+screen_name+" 解除したよっ♪ いままでありがとー！",id
+						if stat=403&cnt>=4:er403++:er=1:mes "送信エラー":break
+						if stat=401
+						if stat=200:er203=0{
+							mid=id
+							repl=0
+							break
+						}
+						friend_list=""+replace(friend_list, ""+uid+",", "")
+						break
+						loop
+					}
+				loop
+				}
+			}
+			;notesel friend_list
+			;notesave dir_desktop+"\\friend_list.log"
+			;end
+			if instr(text,0,"@tsksee")!=-1{
+				if instr(screen_name,0,"tsksee")=-1&instr(screen_name,0,"k534")=-1{
+					if instr(text, 0, "フォロー")!=-1 or instr(text, 0, "ふぉろー")!=-1{
+						mes "フォローモード"
+						if instr(friend_list, 0,""+uid+",")=-1{
+							mes "まだフォローしてないユーザです..."
+							text+=""+"key="+int(0+gettime(0)+gettime(1)+gettime(3)+gettime(4))+""
+							repl=0
+							twttt=0
+							if instr(text, 0, "key=")!=-1{
+								mes"キーが存在します..."
+								if instr(text, 0, "key="+int(0+gettime(0)+gettime(1)+gettime(3)+gettime(4))+"")!=-1{
+									mes "キーが一致しました..."
+									repeat 10
+										mes "Following... "+screen_name
+										follow screen_name
+										mes stat
+										if stat=200{
+											friend_list+=""+uid+","
+											mes"ふぉろー完了"
+											plsms=""
+											repeat 5
+												tweet"@"+screen_name+" フォロー完了したのっ♪"+plsms+"",id
+												if stat=403&cnt>=4:er=1:mes"送信エラー":break
+												if stat=200:er203=0{
+													mid=id
+													repl=0
+													break
+												}
+												plsms+="　"
+											loop
+											break
+										}
+									wait 1
+									loop
+								}else{
+									//キーワードが違う
+									mes"キーが一致しません..."
+									plsms=""
+									repeat 5
+										tweet "@"+screen_name+" 認証キーが違うの＞＜"+plsms+"",id
+										if stat=403&cnt>=4:er=1:mes"送信エラー":break
+										if stat=200:er203=0{
+											mid=id
+											repl=0
+											break
+										}
+										break
+										plsms+="　"
+									loop
+									repl=0
+								}
+							}else{
+								//キーワードがない
+								mes "キーがありません..."
+								plsms=""
+								repeat 15
+									tweet "@"+screen_name+" 認証キーがないからできないの＞＜\n認証キーもつけてねっ♪"+plsms+"",id
+									mes stat
+									if stat=403&cnt>=4:er=1:mes"送信エラー"
+									if stat=200:er203=0{
+										mid=id
+										repl=0
+										break
+									}
+									mes cnt
+									plsms+="　"
+								loop
+								repl=0
+							}
+							
+						}else{
+							//すでにフォローしてる
+							mes"すでにフォローしています..."
+							plsms=""
+							repeat 5
+							tweet"@"+screen_name+" うるせえクソガキ"+plsms+"",id
+							mes stat
+							if stat=200:repk++:lastscreen_name=screen_name:er203=0:mes"[完了]":repl=0:break
+							if stat=403:plsms="　　"
+							if stat=403&cnt=4:er403++:mes "[送信エラー]":break
+							plsms+="　"
+							loop
+						}
+					}
+				}
+			}
+		}else{
+			if repl=1{
+				if instr(text, 0, "解除")!=-1{
+					repeat 5
+						tweet "@"+screen_name+" いまは規制中だからできないの＞＜\n規制解除後にもう一回試してみてねっ♪",id
+						if stat=403&cnt>=4:er403++:mes "送信エラー":break
+						if stat=401
+						if stat=200:er203=0{
+							mid=id
+							repl=0
+							break
+						}
+						break
+					loop
+				}
+			}
+		}
+			
+	mes "repl="+repl+""
+	if repl=1{
+		if instr(text, 0, "自己紹介")!=-1 or instr(text, 0, "誰")!=-1{
+			plsms=""
+			repeat 5
+				aaa=rnd(6)
+				tweet "@"+screen_name+" "+jikoshoukai(aaa)+""+plsms+"",id
+				mes"自己紹介："+stat
+				if stat=200:repk++:lastscreen_name=screen_name:er403=0:break
+				plsms="　"
+				if stat=403:er403++
+			loop
+			repl=0
+		}
+	}
+	
+	if instr(screen_name, 0, "133cs")!=-1{
+		repl=0
+		twttt=0
+	}
+	if instr(screen_name, 0, "shabotch")!=-1{
+		repl=0
+		twttt=0
+	}
+	if instr(screen_name, 0, "k534")!=-1{
+		;repl=0
+		;twttt=0
+	}
+	mes"[2]repl="+repl
+	if repl=1{
+		if instr(text, 0, "おしえ")!=-1 or instr(text, 0, "教え")!=-1 or instr(text, 0, "考えて")!=-1 or instr(text, 0, "かんがえ")!=-1 or instr(text, 0, "アイデア")!=-1 or instr(text, 0, "案")!=-1 or instr(text, 0, "説明")!=-1 or instr(text, 0, "せつめい")!=-1 or instr(text, 0, "思う？")!=-1 or instr(text, 0, "おもう？")!=-1{
+			mes "[送信中...]"
+			plsms=""
+				repeat 5
+					nani="知らん","ググれ","ヤフれ","ウィキれ","知恵袋に聞け","2chにスレ立てろ","知るか","ｇｇｒ","ん？"
+					aaa=rnd(13)
+					if aaa=11 or aaa=12{						
+						rep=1
+						mtww23=""
+						mdd=0
+						tww=""
+						twtext=""
+						info=""
+						twbuf=""
+						twwm=""
+						kkk++
+						md=0
+						flname=0
+						#include"make_text.hsp"
+						rep=0
+						mtww23=""
+						mdd=0
+						tww=""
+						twtext=""
+						info=""
+						twbuf=""
+						twwm=""
+					}else{
+						tweet "@"+screen_name+" "+nani(aaa)+""+plsms+"",id
+						mes stat
+						;title"ツイート中...  Status:"+stat+"":if tm=90:break
+						if stat=403:plsms="　"
+						if stat=403&cnt>=4:er403++:mes "送信エラー":break
+						if stat=401
+						if stat=200:repk++:lastscreen_name=screen_name:er203=0{
+							mid=id
+							repl=0
+							break
+						}
+					}
+				loop
+				plsms=""
+		}else{
+			mes "[送信中...]"
+			sdim nani,,100
+			nani="ちょっと何言ってるかわかんない","へーそうなんだ","なに？","へー","え？そうなの","よくわからない","もうすこし詳しく","やっぱり？","日本語で","！？","ぬへ？","・・・","なんて？"
+			randomize
+			aaa=rnd(20)
+			if aaa=14 or aaa=15 or aaa=16 or aaa=17 or aaa=18 or aaa=19:{
+				rep=1
+				mtww23=""
+				mdd=0
+				tww=""
+				twtext=""
+				info=""
+				twbuf=""
+				twwm=""
+				kkk++
+				md=0
+				flname=0
+				#include"make_text.hsp"
+				rep=0
+				mtww23=""
+				mdd=0
+				tww=""
+				twtext=""
+				info=""
+				twbuf=""
+				twwm=""
+			}else{
+				plsms=""
+				repeat 5
+					aaa=rnd(14)
+					tweet "@"+screen_name+" "+nani(aaa)+""+plsms+"",id
+					mes stat
+					;title"ツイート中...  Status:"+stat+"":if tm=90:break
+					if stat=403:plsms="　"
+					if stat=403&cnt>=4:er403++:mes "送信エラー":break
+					if stat=401
+					if stat=200:repk++:lastscreen_name=screen_name:er203=0{
+						mid=id
+						repl=0
+						break
+					}
+				loop
+				plsms=""
+			}
+		}
+	}
+	repl=0
+	repl1=0
+	repll=0
+	twttt=0
+	twtttt=0
+	text=""
+	wait 10
+	if er403>=5&kise=1:kise=2:er403=0:goto*main
+	if er403>=5:kise=1:kisezikoku=d3timer():er403=0:mes"規制":goto*main
+*tiki
+	min=gettime(5)
+	if min=0&twicom=0&twmin!min{
+		twmin=min
+		goto*twc
+	}
+	if min\10=0&twicom=0&twmin!min{
+		twmin=min
+		goto*twc
+	}else{
+		if twcom=1{
+			if min\10=0:else:twcom=0
+		}
+	}
+	mes"Back"
+	if int(gettime(5))=0:repk=0
+	goto*mainn
+*twc
+	repeat 5
+	if int(gettime(4))=0&int(gettime(5))=0{
+		tweet"日付変わっちゃったねー まだ起きてるのかー?"
+		if stat=200:er403=0:break
+		if stat=403&cnt=4:er=403
+	}
+	loop
+	repeat 5
+	if int(gettime(4))=1&int(gettime(5))=0{
+		tweet"もう深夜だよー。いまTLにいるやつは早く寝ようねー＞＜"
+		if stat=200:er403=0:break
+		if stat=403&cnt=4:er=403
+	}
+	loop
+	mtww23=""
+	mdd=0
+	tww=""
+	twtext=""
+	info=""
+	twbuf=""
+	twwm=""
+	kkk++
+	md=0
+	flname=0
+*tw
+	#include"make_text.hsp"
+	i=0
+	tm=0
+	buff=""
+	md=0
+	tww2=""
+	tww=""
+	rndd=0
+	twtext=""
+	kkk=0
+	tww23=""
+	twcom=1
+	wait 10
+	goto*mainn
+	stop
+*exit
+	end

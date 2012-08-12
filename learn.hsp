@@ -1,0 +1,322 @@
+	/***********************************************************
+	
+		改行コード関連の処理を行うモジュール
+	
+			【2005/11/13 更新】
+	
+		命令・関数一覧
+	
+		#defcfunc id_crlf var buf_to_id
+			機能：		文字列中の改行コード形式を判別（最初に見つけたものを返す）
+			引数：		buf_to_id		処理対象文字列
+			戻り値：		0(TYPE_CRLF)
+					1(TYPE_CR)
+					2(TYPE_LF)
+					-1(TYPE_NO_CRLF=改行コードが見つからなかった)
+	
+		#deffunc conv_crlf var buf_to_conv, int conv_type
+			機能：		文字列中の改行コードを別形式に変換
+			引数：		buf_to_conv		処理対象文字列
+					conv_type		変換後形式（
+									0(TYPE_CRLF)
+									1(TYPE_CR)
+									2(TYPE_LF)
+								から選択して指定）
+	
+		#deffunc rm_crlf var buf_to_rm
+			機能：		文字列中の改行コードを削除
+			引数：		buf_to_rm		処理対象文字列
+	
+	
+		使用上の注意
+	
+			含まれる改行コードの形式が1種類に統一されている
+			文字列のみ正常に処理することができる。
+			Shift-JIS文字列でのみ動作確認済み
+	
+	***********************************************************/
+	
+	#module crlf
+	
+	#const	TRUE	1
+	#const	FALSE	0
+	
+	/* コード番号 */
+	#const	global	CODE_CR			13
+	#const	global	CODE_LF			10
+	
+	/* 改行コード形式 */
+	#const	global	TYPE_CRLF		0
+	#const	global	TYPE_CR			1
+	#const	global	TYPE_LF			2
+	#const	global	TYPE_NO_CRLF	100	// 改行コードが見つからなかった
+	#const	global	NUM_TYPE_CRLF	3	// 種類数
+	
+	/**********************************************************/
+	// 改行コード形式を識別
+	/**********************************************************/
+	#defcfunc id_crlf var buf_to_id
+		char = "\n"
+		if instr(buf_to_id,0,char)>=0 {
+			return TYPE_CRLF
+		}
+		char = " "
+		poke char,0,CODE_CR
+		if instr(buf_to_id,0,char)>=0 {
+			return TYPE_CR
+		}
+		poke char,0,CODE_LF
+		if instr(buf_to_id,0,char)>=0 {
+			return TYPE_LF
+		}
+		return TYPE_NO_CRLF
+	
+	/**********************************************************/
+	// 改行コードを別形式に変換
+	/**********************************************************/
+	#deffunc conv_crlf var buf_to_conv, int conv_type
+		/****************/
+		/* 引数チェック */
+		/****************/
+		if strlen(buf_to_conv)<=0	: return		// 文字列が空
+		if (conv_type>TYPE_LF) | (conv_type<TYPE_CRLF)	: return	// conv_typeが不正
+	
+		/********************/
+		/* 現在の形式を取得 */
+		/********************/
+		cur_type = id_crlf(buf_to_conv)
+		if cur_type=TYPE_NO_CRLF	: return	// 改行コードは含まれていない
+	
+		/**********************/
+		/* 現在のコードの設定 */
+		/**********************/
+		if cur_type=TYPE_CRLF {
+			if conv_type=TYPE_CRLF	: return	// 変換の必要なし
+		}
+		if cur_type=TYPE_CR {
+			if conv_type=TYPE_CR	: return	// 変換の必要なし
+			cur_code = CODE_CR					// getstrのp4用
+		}
+		if cur_type=TYPE_LF {
+			if conv_type=TYPE_LF	: return	// 変換の必要なし
+			cur_code = CODE_LF					// getstrのp4用
+		}
+	
+		/**********************/
+		/* 変換後コードの設定 */
+		/**********************/
+		if conv_type=TYPE_CRLF	: new_crlf = "\n"
+		if conv_type=TYPE_CR	: new_crlf = " "		: poke new_crlf,0,CODE_CR
+		if conv_type=TYPE_LF	: new_crlf = " "		: poke new_crlf,0,CODE_LF
+	
+		/********/
+		/* 変換 */
+		/********/
+		/* 処理対象文字列の末尾が改行コードかどうかチェック */
+		tail = strmid(buf_to_conv,-1,2)	// 処理対象文字列の末尾2文字を取得
+		if tail="\n" {
+			flag = TRUE
+			goto *@f
+		}
+	
+		tail = strmid(tail,-1,1)	// 末尾1文字を取得
+		char = ""	: poke char,0,CODE_CR
+		if tail=char	: flag = TRUE	: goto *@f
+	
+		char = ""	: poke char,0,CODE_LF
+		if tail=char	: flag = TRUE	: goto *@f
+	
+		flag = FALSE
+	*@
+	
+		/*
+			getstrで改行コードの手前まで取得した文字列を新しい改行コードと
+			一緒に別のバッファにためていき最後にまとめて元のバッファに戻す
+		*/
+		i = 0
+		tmpbuf = ""
+		len = strlen(buf_to_conv)
+		repeat
+			if cur_type=TYPE_CRLF {
+				getstr tmpstr,buf_to_conv,i
+			}
+			else {
+				getstr tmpstr,buf_to_conv,i,cur_code
+			}
+			i += strsize
+			if i>=len {		// 最後の行
+				if flag {	// 処理対象文字列の末尾が改行コード
+					tmpbuf += tmpstr+new_crlf
+				}
+				else {
+					tmpbuf += tmpstr
+				}
+				break
+			}
+			else {
+				tmpbuf += tmpstr+new_crlf
+			}
+		loop
+		buf_to_conv = tmpbuf
+		return
+	
+	/**********************************************************/
+	// 改行コードを削除
+	/**********************************************************/
+	#deffunc rm_crlf var buf_to_rm
+		/* getstr検索用改行コード */
+		crlfs = 0,CODE_CR,CODE_LF	// CRLFは必要なし
+	
+		/* 改行コードを種類ごとに削除 */
+		repeat NUM_TYPE_CRLF
+			crlftype = cnt
+			i = 0
+			tmpbuf = ""
+			len = strlen(buf_to_rm)
+			/*
+				getstrで改行コードの手前まで取得した文字列を別のバッファ
+				にためていき最後にまとめて元のバッファに戻す
+			*/
+			repeat
+				if i>=len {
+					break
+				}
+				getstr tmpstr,buf_to_rm,i,crlfs(crlftype)
+				i += strsize
+				tmpbuf += tmpstr
+			loop
+			buf_to_rm = tmpbuf
+		loop
+		return
+	
+	/**********************************************************/
+	
+	#global
+	#module _FileCheck_
+	#uselib "kernel32"
+	#cfunc _FC_CreateFile "CreateFileA" sptr,sptr,sptr,sptr,sptr,sptr,sptr
+	#cfunc _FC_GetLastError"GetLastError"
+	#func _FC_CloseHandle "CloseHandle" sptr
+	#define GENERIC_READ 0x80000000
+	#define GENERIC_WRITE 0x40000000
+	#define OPEN_EXISTING 0x00000003
+	#define FILE_ATTRIBUTE_NORMAL 0x00000080
+	#define INVALID_HANDLE_VALUE -1
+	#deffunc FileCheck str _fname
+	    fname = _fname
+	    hFile = _FC_CreateFile(fname, GENERIC_READ | GENERIC_WRITE, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0)
+	    error = _FC_GetLastError()
+	    if hFile != INVALID_HANDLE_VALUE {
+	        _FC_CloseHandle hFile
+	    }
+	return error
+	#global
+	;
+	;#include "chgcrlf.hsp"
+	p_input=varptr(st_input)
+	p_result=mecab_sparse_tostr(p_mecab_t,p_input)
+	dupptr st_result, p_result,5000, vartype("str")
+	dmy=strlen(st_result)
+	if peek(st_result,0) == 0 {dialog "解析に失敗" :stop}
+	conv_crlf st_result
+	;st_result=utf8n2sjis(st_result)
+	txbuf+="S_T\n"+st_result
+;
+	notesel st
+	exist "learn/S_T.ini"
+	if strsize!-1{
+		stt2=""
+		noteload "learn/S_T.ini"
+		notesel txbuf
+		noteget stt,1
+		split stt,"	",stt2,dst
+		split st,stt2,dst
+		if stat-1>=1:else:st2=st+stt2+"\n"
+		notesel st2
+		if stt2!"EOS"&stt2!"RT"&stt2!"":mes stt2:notesave "learn/S_T.ini"
+	}else{
+		notesel txbuf
+		noteget stt,1
+		split stt,"	",stt2,dst
+		notesel stt2
+		mes txbuf
+		notesave "learn/S_T.ini"
+	}
+;
+	notesel txbuf
+	a=0
+	repeat notemax
+	info=str(info)
+	notesel txbuf
+	noteget buf,cnt+a
+	split buf,"	",info,dst
+;
+	notesel txbuf
+	noteget buf,cnt+1+a
+	split buf,"	",info1,dst
+;
+	list=str(list)
+	info=str(info)
+	split list,""+info+"",dst
+	if stat-1=0{
+		exist "learn/"+info+".ini"
+		if strsize!-1{
+			notesel learnbuf
+			split list,""+info+"",dst
+			repeat
+			FileCheck "learn/"+info+".ini"
+			if stat=0:noteload "learn/"+info+".ini":break
+			ii++
+			if ii=1000 or statt=123 :break
+			wait 1+ii*3
+			loop
+			split info1,""+learnbuf+"",dst
+			if stat-1=0:info1+="\n"+learnbuf
+			ii=0
+			fil=1
+		}
+		notesel info1
+		split list,""+info+"",dst
+		repeat
+		FileCheck "learn/"+info+".ini"
+		statt=stat
+		if statt=0 or stat=2 or stat=3:wait 1+ii*3{
+			split info,"\\",dst
+			flname+=stat-1
+			split info,"/",dst
+			flname+=stat-1
+			split info,":",dst
+			flname+=stat-1
+			split info,"?",dst
+			flname+=stat-1
+			split info,"\"\",dst
+			flname+=stat-1
+			split info,"<",dst
+			flname+=stat-1
+			split info,">",dst
+			flname+=stat-1
+			split info,"|",dst
+			flname+=stat-1
+			split learnbuf,""+info+"\n"
+			if fil=1:flname+=stat-1
+			if flname<=0:notesave "learn/"+info+".ini":break:else:break
+		}
+		ii++
+		if ii=1000 or statt=123:break
+		wait 1+ii*3
+		loop
+		ii=0
+	}
+	fil=0
+;
+;
+	list=list+","+info+""
+;
+	info=""
+	info1=""
+	buf=""
+	loop
+	txbuf=""
+	i++
+	statt=0
+	ii=0
